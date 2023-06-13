@@ -16,6 +16,7 @@ const channels = 2
 const wordLength = 2
 const dataBufferLength = 8192
 const packetSize = 96
+const indexByte = packetSize
 const audioBufferLength = packetSize / wordLength
 const sampleRate = 48000
 
@@ -70,8 +71,7 @@ func fetchPackets() {
 	chk(err)
 	conn.SetReadBuffer(dataBufferLength)
 
-	phaseFactor := int16(4096)
-	saw := int16(-32768)
+	counter := byte(0)
 	for {
 		select {
 		case <-quit:
@@ -81,18 +81,18 @@ func fetchPackets() {
 		default:
 			localAudioBuffer := make([]int16, audioBufferLength)
 			_, _, err := conn.ReadFromUDP(b.dataBuffer)
-			// _, err := conn.Read(b.dataBuffer)
 			chk(err)
-			b.lock.Lock()
-			saw += phaseFactor
-			for i := range localAudioBuffer {
-				short := int16(b.dataBuffer[i*2]) | (int16(b.dataBuffer[(i*2)+1]) << 8)
-				// short := saw
-				localAudioBuffer[i] = short
+			if b.dataBuffer[indexByte] != counter {
+				counter = b.dataBuffer[indexByte]
+				b.lock.Lock()
+				for i := range localAudioBuffer {
+					short := int16(b.dataBuffer[i*2]) | (int16(b.dataBuffer[(i*2)+1]) << 8)
+					localAudioBuffer[i] = short
+				}
+				b.lock.Unlock()
+				b.audioBuffer <- localAudioBuffer
+				b.rCount++
 			}
-			b.lock.Unlock()
-			b.audioBuffer <- localAudioBuffer
-			b.rCount++
 		}
 	}
 }
@@ -113,7 +113,6 @@ func fetchPackets() {
 
 func main() {
 	b.dataBuffer = make([]byte, dataBufferLength)
-	// b.audioBuffer = make([]float32, audioBufferLength)
 	b.audioBuffer = make(chan []int16, 300)
 
 	var end = make(chan struct{})

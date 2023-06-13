@@ -6,17 +6,20 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
+
 	"github.com/gordonklaus/portaudio"
 )
 
 const channels = 2
 const wordLength = 2
 const packetSize = 96
-const dataBufferLength = packetSize
-const audioBufferLength = dataBufferLength / wordLength
+const indexByte = packetSize
+const dataBufferLength = packetSize + 1
+const audioBufferLength = packetSize / wordLength
 const sampleRate = 48000
-
-var sendCount int32
+const redundancy = 1
+const packetPeriodNs = (1000000 * audioBufferLength) / (sampleRate * channels)
 
 func cleanup(conn net.Conn) {
 	conn.Close()
@@ -36,6 +39,7 @@ func cleanup(conn net.Conn) {
 func main() {
 	dataBuffer := make([]byte, dataBufferLength)
 	audioBuffer := make([]float32, audioBufferLength)
+	counter := byte(0)
 
 	chk(portaudio.Initialize())
 	defer portaudio.Terminate()
@@ -61,30 +65,20 @@ func main() {
 
 	// go counter()
 
-	sampleFactor := float32(0.1)
-	saw := float32(-1.0)
-
 	for {
 		chk(stream.Read())
-		sendCount++
 		for i := range audioBuffer {
-			/* sine := math.Sin(phase * 2.0 * math.Pi)
-			_, phase = math.Modf(phase + sampleFactor) */
-			/* if i > (audioBufferLength / 2) {
-				audioBuffer[i] = saw
-			} else {
-				audioBuffer[i] = 0.0
-			}*/
-
 			short := int16(audioBuffer[i] * 32767)
 			dataBuffer[i * 2] = byte(short & 0xFF);
 			dataBuffer[(i * 2) +1] = byte(short >> 8);
 		}
-		_,err := conn.Write(dataBuffer)
-		chk(err)
-		saw += sampleFactor
-		if saw >= 1 {
-			saw = -1
+		dataBuffer[indexByte] = counter
+		counter++
+		// Resend same packet for redunancy
+		for i := 0; i < redundancy; i++ {
+			_,err := conn.Write(dataBuffer)
+			chk(err)
+			time.Sleep((packetPeriodNs / redundancy) * time.Nanosecond)
 		}
 	}
 }

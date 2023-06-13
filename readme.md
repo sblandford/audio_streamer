@@ -1,3 +1,6 @@
-# This is a audio streaming server and client example written in Golang
+# Very low latency basic audio PCM S16LE UDP streamer
 
-It uses Portaudio under the hood to get audio I/O (and should therefore work on most platforms) and sends/receives via HTTP. This is an example I wrote for [this article](https://medium.com/@valentijnnieman_79984/how-to-build-an-audio-streaming-server-in-go-part-1-1676eed93021).
+UDP should work fine through a single switch where there is virtually no possibility of the packets arriving out of order and the PCM format is known
+
+To play the stream sent by audio_streamer_send, either use audio_streamer_receive or:
+```ffplay -f s16le -ac 2 -ar 48000 "udp://224.0.0.3:1234"```

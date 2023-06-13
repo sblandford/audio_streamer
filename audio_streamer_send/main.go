@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 	"github.com/gordonklaus/portaudio"
 )
 
@@ -25,14 +24,14 @@ func cleanup(conn net.Conn) {
 }
 
 
-func counter() {
+/* func counter() {
 	for {
 
 		time.Sleep(1 * time.Second)
 		fmt.Printf("TX: %6d\n", sendCount)
 		sendCount = 0
 	}
-}
+} */
 
 func main() {
 	dataBuffer := make([]byte, dataBufferLength)
@@ -60,7 +59,7 @@ func main() {
         os.Exit(0)
     }()
 
-	go counter()
+	// go counter()
 
 	sampleFactor := float32(0.1)
 	saw := float32(-1.0)

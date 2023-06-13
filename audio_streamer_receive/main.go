@@ -97,7 +97,7 @@ func fetchPackets() {
 	}
 }
 
-func counter() {
+/* func counter() {
 	for {
 		select {
 		case <-quit:
@@ -109,7 +109,7 @@ func counter() {
 			b.wCount = 0
 		}
 	}
-}
+} */
 
 func main() {
 	b.dataBuffer = make([]byte, dataBufferLength)
@@ -120,7 +120,7 @@ func main() {
 
 	go fetchPackets()
 	go playOut()
-	go counter ()
+	// go counter ()
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)

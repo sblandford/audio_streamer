@@ -16,7 +16,6 @@ const channels = 2
 const wordLength = 2
 const dataBufferLength = 8192
 const packetSize = 96
-const indexByte = packetSize
 const audioBufferLength = packetSize / wordLength
 const sampleRate = 48000
 
@@ -71,7 +70,6 @@ func fetchPackets() {
 	chk(err)
 	conn.SetReadBuffer(dataBufferLength)
 
-	counter := byte(0)
 	for {
 		select {
 		case <-quit:
@@ -82,17 +80,16 @@ func fetchPackets() {
 			localAudioBuffer := make([]int16, audioBufferLength)
 			_, _, err := conn.ReadFromUDP(b.dataBuffer)
 			chk(err)
-			if b.dataBuffer[indexByte] != counter {
-				counter = b.dataBuffer[indexByte]
-				b.lock.Lock()
-				for i := range localAudioBuffer {
-					short := int16(b.dataBuffer[i*2]) | (int16(b.dataBuffer[(i*2)+1]) << 8)
-					localAudioBuffer[i] = short
-				}
-				b.lock.Unlock()
-				b.audioBuffer <- localAudioBuffer
-				b.rCount++
+
+			b.lock.Lock()
+			for i := range localAudioBuffer {
+				short := int16(b.dataBuffer[i*2]) | (int16(b.dataBuffer[(i*2)+1]) << 8)
+				localAudioBuffer[i] = short
 			}
+			b.lock.Unlock()
+			b.audioBuffer <- localAudioBuffer
+			b.rCount++
+
 		}
 	}
 }

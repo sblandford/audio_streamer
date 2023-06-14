@@ -5,7 +5,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 
@@ -18,6 +17,7 @@ const dataBufferLength = 8192
 const packetSize = 96
 const audioBufferLength = packetSize / wordLength
 const sampleRate = 48000
+const missReportRateSec = 10
 
 var quit = make(chan bool)
 var b buffers
@@ -25,11 +25,10 @@ var b buffers
 
 
 type buffers struct {
-	dataBuffer  []byte
+	dataBuffer  chan []byte
 	audioBuffer chan []int16
-	lock        sync.Mutex
-	rCount      int
-	wCount      int
+	hitCount	float32
+	missCount	float32
 }
 
 func playOut() {
@@ -38,19 +37,18 @@ func playOut() {
 
 
 	stream, err := portaudio.OpenDefaultStream(0, channels, sampleRate, audioBufferLength / channels, func(out []int16) {
-		b.lock.Lock()
 		select {
 		case buf := <- b.audioBuffer:
 			copy(out, buf)
+			b.hitCount++
 		default:
 			buf := make([]int16, audioBufferLength)
 			for i := range buf {
 				buf[i] = 0
 			}
 			copy(out, buf)
+			b.missCount++
 		}
-		b.lock.Unlock()
-		b.wCount++
 	})
 	chk(err)
 	chk(stream.Start())
@@ -60,6 +58,23 @@ func playOut() {
 	stream.Close()
 	portaudio.Terminate()
 	println("Audio terminated")
+}
+
+func processPackets () {
+	for {
+		select {
+		case <-quit:
+			println("Processing stopped")
+			return
+		case buf := <- b.dataBuffer:
+			localAudioBuffer := make([]int16, audioBufferLength)
+			for i := range localAudioBuffer {
+				short := int16(buf[i*2]) | (int16(buf[(i*2)+1]) << 8)
+				localAudioBuffer[i] = short
+			}
+			b.audioBuffer <- localAudioBuffer
+		}
+	}
 }
 
 func fetchPackets() {
@@ -77,46 +92,39 @@ func fetchPackets() {
 			println("Connection closed")
 			return
 		default:
-			localAudioBuffer := make([]int16, audioBufferLength)
-			_, _, err := conn.ReadFromUDP(b.dataBuffer)
+			buf := make([]byte, dataBufferLength)
+			_, _, err := conn.ReadFromUDP(buf)
 			chk(err)
-
-			b.lock.Lock()
-			for i := range localAudioBuffer {
-				short := int16(b.dataBuffer[i*2]) | (int16(b.dataBuffer[(i*2)+1]) << 8)
-				localAudioBuffer[i] = short
-			}
-			b.lock.Unlock()
-			b.audioBuffer <- localAudioBuffer
-			b.rCount++
-
+			b.dataBuffer <- buf
 		}
 	}
 }
 
-/* func counter() {
+func counter() {
 	for {
 		select {
 		case <-quit:
 			return
 		default:
-			time.Sleep(1 * time.Second)
-			fmt.Printf("RX: %6d, OUT: %6d\n", b.rCount, b.wCount)
-			b.rCount = 0
-			b.wCount = 0
+			time.Sleep(missReportRateSec * time.Second)
+			missPercent := (b.missCount * 100) / (b.hitCount + b.missCount)
+			fmt.Printf("Error rate: %06.3f%%\n", missPercent)
+			b.hitCount = 0
+			b.missCount = 0
 		}
 	}
-} */
+}
 
 func main() {
-	b.dataBuffer = make([]byte, dataBufferLength)
+	b.dataBuffer = make(chan []byte, dataBufferLength)
 	b.audioBuffer = make(chan []int16, 300)
 
 	var end = make(chan struct{})
 
 	go fetchPackets()
+	go processPackets()
 	go playOut()
-	// go counter ()
+	go counter ()
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
